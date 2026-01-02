@@ -208,8 +208,8 @@ async def suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(
         "📞 *Suporte*\n\n"
-        "WhatsApp: (11) 99999-9999\n"
-        "Email: suporte@esim.com.br",
+        "WhatsApp: (33) 984518052\n"
+        "Email: richdweed@gmail.com",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
@@ -277,3 +277,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
