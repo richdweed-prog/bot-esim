@@ -1,13 +1,14 @@
 import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
 
 # ========== CONFIGURAÇÃO ==========
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
 # ========== DADOS DOS PLANOS ==========
 PLANOS = {
@@ -23,7 +24,7 @@ PLANOS = {
 carrinhos = {}
 
 # ========== FUNÇÕES DO BOT ==========
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def start(update: Update, context: CallbackContext):
     user_id = str(update.effective_user.id)
     
     if user_id not in carrinhos:
@@ -38,7 +39,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.message.reply_text(
+    update.message.reply_text(
         "🛍️ *Bem-vindo à Loja de eSIM!*\n\n"
         "Compre seu chip digital com 66GB de internet.\n"
         "Ativação imediata!",
@@ -46,9 +47,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
-async def ver_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def ver_planos(update: Update, context: CallbackContext):
     query = update.callback_query
-    await query.answer()
+    query.answer()
     
     keyboard = []
     for ddd, plano in PLANOS.items():
@@ -63,14 +64,14 @@ async def ver_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    query.edit_message_text(
         "📋 *Planos Disponíveis:*\n\n"
         "Escolha o DDD:",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
 
-async def detalhes_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def detalhes_plano(update: Update, context: CallbackContext):
     query = update.callback_query
     ddd = query.data.split('_')[1]
     plano = PLANOS[ddd]
@@ -83,7 +84,7 @@ async def detalhes_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    query.edit_message_text(
         f"📱 *PLANO VIVO DDD {ddd}*\n\n"
         f"• Dados: {plano['dados']}\n"
         f"• Chamadas: Ilimitadas\n"
@@ -94,7 +95,7 @@ async def detalhes_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
-async def adicionar_carrinho(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def adicionar_carrinho(update: Update, context: CallbackContext):
     query = update.callback_query
     ddd = query.data.split('_')[1]
     plano = PLANOS[ddd].copy()
@@ -114,7 +115,7 @@ async def adicionar_carrinho(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    query.edit_message_text(
         f"✅ *Adicionado!*\n\n"
         f"VIVO DDD {ddd}\n"
         f"66GB - R$ {plano['valor']:.2f}\n\n"
@@ -123,7 +124,7 @@ async def adicionar_carrinho(update: Update, context: ContextTypes.DEFAULT_TYPE)
         parse_mode='Markdown'
     )
 
-async def ver_carrinho(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def ver_carrinho(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = str(query.from_user.id)
     
@@ -131,7 +132,7 @@ async def ver_carrinho(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("📋 Ver Planos", callback_data='ver_planos')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
+        query.edit_message_text(
             "🛒 *Carrinho vazio*",
             reply_markup=reply_markup,
             parse_mode='Markdown'
@@ -150,19 +151,19 @@ async def ver_carrinho(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    query.edit_message_text(
         f"🛒 *Seu Carrinho*\n\n{itens_text}\n\n"
         f"*Total: R$ {total:.2f}*",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
 
-async def finalizar_compra(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def finalizar_compra(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = str(query.from_user.id)
     
     if user_id not in carrinhos or not carrinhos[user_id]:
-        await query.answer("Carrinho vazio!", show_alert=True)
+        query.answer("Carrinho vazio!", show_alert=True)
         return
     
     total = sum(item['valor'] for item in carrinhos[user_id])
@@ -175,7 +176,7 @@ async def finalizar_compra(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    query.edit_message_text(
         f"💰 *Pagamento*\n\n"
         f"Total: R$ {total:.2f}\n\n"
         f"Escolha a forma de pagamento:",
@@ -183,13 +184,13 @@ async def finalizar_compra(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
-async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def ajuda(update: Update, context: CallbackContext):
     query = update.callback_query
     
     keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data='voltar_inicio')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    query.edit_message_text(
         "❓ *Ajuda*\n\n"
         "1. Escolha o DDD\n"
         "2. Adicione ao carrinho\n"
@@ -200,13 +201,13 @@ async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
-async def suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def suporte(update: Update, context: CallbackContext):
     query = update.callback_query
     
     keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data='voltar_inicio')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    query.edit_message_text(
         "📞 *Suporte*\n\n"
         "WhatsApp: (11) 99999-9999\n"
         "Email: suporte@esim.com.br",
@@ -214,7 +215,7 @@ async def suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
-async def voltar_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def voltar_inicio(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = str(query.from_user.id)
     
@@ -229,25 +230,25 @@ async def voltar_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
+    query.edit_message_text(
         "🛍️ *Menu Principal*",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
 
-async def limpar_carrinho(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def limpar_carrinho(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = str(query.from_user.id)
     
     if user_id in carrinhos:
         carrinhos[user_id] = []
     
-    await query.answer("Carrinho limpo!", show_alert=True)
-    await voltar_inicio(update, context)
+    query.answer("Carrinho limpo!", show_alert=True)
+    voltar_inicio(update, context)
 
 # ========== FUNÇÃO PRINCIPAL ==========
 def main():
-    TOKEN = "8563239036:AAEtaHnxgZiKA5lVvq1d_9IN92GnGooXrc8"
+    TOKEN = os.getenv('TELEGRAM_TOKEN')
     
     if not TOKEN:
         print("❌ ERRO: Token não encontrado nas variáveis de ambiente!")
@@ -256,21 +257,26 @@ def main():
     
     print("🤖 Iniciando Bot de eSIM...")
     
-    application = Application.builder().token(TOKEN).build()
+    # Criar updater (versão antiga)
+    updater = Updater(TOKEN, use_context=True)
+    dp = updater.dispatcher
     
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(ver_planos, pattern='^ver_planos$'))
-    application.add_handler(CallbackQueryHandler(detalhes_plano, pattern='^plano_'))
-    application.add_handler(CallbackQueryHandler(adicionar_carrinho, pattern='^add_'))
-    application.add_handler(CallbackQueryHandler(ver_carrinho, pattern='^ver_carrinho$'))
-    application.add_handler(CallbackQueryHandler(finalizar_compra, pattern='^finalizar$'))
-    application.add_handler(CallbackQueryHandler(ajuda, pattern='^ajuda$'))
-    application.add_handler(CallbackQueryHandler(suporte, pattern='^suporte$'))
-    application.add_handler(CallbackQueryHandler(voltar_inicio, pattern='^voltar_inicio$'))
-    application.add_handler(CallbackQueryHandler(limpar_carrinho, pattern='^limpar_carrinho$'))
+    # Registrar handlers
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CallbackQueryHandler(ver_planos, pattern='^ver_planos$'))
+    dp.add_handler(CallbackQueryHandler(detalhes_plano, pattern='^plano_'))
+    dp.add_handler(CallbackQueryHandler(adicionar_carrinho, pattern='^add_'))
+    dp.add_handler(CallbackQueryHandler(ver_carrinho, pattern='^ver_carrinho$'))
+    dp.add_handler(CallbackQueryHandler(finalizar_compra, pattern='^finalizar$'))
+    dp.add_handler(CallbackQueryHandler(ajuda, pattern='^ajuda$'))
+    dp.add_handler(CallbackQueryHandler(suporte, pattern='^suporte$'))
+    dp.add_handler(CallbackQueryHandler(voltar_inicio, pattern='^voltar_inicio$'))
+    dp.add_handler(CallbackQueryHandler(limpar_carrinho, pattern='^limpar_carrinho$'))
     
+    # Iniciar bot
     print("✅ Bot pronto e online!")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == '__main__':
     main()
