@@ -31,12 +31,12 @@ def run_web():
 
 # ========== DADOS DOS PLANOS ==========
 PLANOS = {
-    '11': {'nome': 'VIVO DDD 11', 'preco': 25.00},
-    '12': {'nome': 'VIVO DDD 12', 'preco': 25.00},
-    '31': {'nome': 'VIVO DDD 31', 'preco': 25.00},
-    '61': {'nome': 'VIVO DDD 61', 'preco': 25.00},
-    '75': {'nome': 'VIVO DDD 75', 'preco': 25.00},
-    '88': {'nome': 'VIVO DDD 88', 'preco': 25.00},
+    '11': {'nome': 'VIVO DDD 11', 'preco': 25.00, 'dados': '66GB'},
+    '12': {'nome': 'VIVO DDD 12', 'preco': 25.00, 'dados': '66GB'},
+    '31': {'nome': 'VIVO DDD 31', 'preco': 25.00, 'dados': '66GB'},
+    '61': {'nome': 'VIVO DDD 61', 'preco': 25.00, 'dados': '66GB'},
+    '75': {'nome': 'VIVO DDD 75', 'preco': 25.00, 'dados': '66GB'},
+    '88': {'nome': 'VIVO DDD 88', 'preco': 25.00, 'dados': '66GB'},
 }
 
 carrinhos = {}
@@ -97,7 +97,8 @@ async def start(update: Update, context):
     keyboard = [
         [InlineKeyboardButton("📱 VER PLANOS", callback_data='planos')],
         [InlineKeyboardButton(f"🛒 CARRINHO ({len(carrinhos[user_id])})", callback_data='carrinho')],
-        [InlineKeyboardButton("❓ AJUDA", callback_data='ajuda')]
+        [InlineKeyboardButton("❓ COMO FUNCIONA", callback_data='instrucoes')],
+        [InlineKeyboardButton("🆘 SUPORTE TÉCNICO", callback_data='suporte')]
     ]
     
     await update.message.reply_text(
@@ -141,7 +142,7 @@ async def ver_plano(update: Update, context):
     
     await query.edit_message_text(
         f"📱 *{PLANOS[ddd]['nome']}*\n\n"
-        f"• Dados: 66GB\n"
+        f"• Dados: {PLANOS[ddd]['dados']}\n"
         f"• Chamadas: Ilimitadas\n"
         f"• WhatsApp: Ilimitado\n"
         f"• Validade: 30 dias\n"
@@ -158,7 +159,12 @@ async def adicionar_carrinho(update: Update, context):
     if user_id not in carrinhos:
         carrinhos[user_id] = []
     
-    carrinhos[user_id].append(ddd)
+    # Adicionar como dicionário para guardar mais informações
+    carrinhos[user_id].append({
+        'ddd': ddd,
+        'nome': PLANOS[ddd]['nome'],
+        'preco': PLANOS[ddd]['preco']
+    })
     
     keyboard = [
         [InlineKeyboardButton(f"🛒 VER CARRINHO ({len(carrinhos[user_id])})", callback_data='carrinho')],
@@ -186,8 +192,8 @@ async def ver_carrinho(update: Update, context):
         return
     
     itens = carrinhos[user_id]
-    total = len(itens) * 25.00
-    texto = "\n".join([f"• {PLANOS[ddd]['nome']}" for ddd in itens])
+    total = sum(item['preco'] for item in itens)
+    texto = "\n".join([f"• {item['nome']} - R${item['preco']:.2f}" for item in itens])
     
     keyboard = [
         [InlineKeyboardButton("💰 PAGAR COM PIX", callback_data='finalizar')],
@@ -209,16 +215,25 @@ async def finalizar_compra(update: Update, context):
         await query.answer("❌ Carrinho vazio!", show_alert=True)
         return
     
+    # Verificar se há itens no carrinho
+    if not carrinhos[user_id]:
+        await query.answer("❌ Carrinho vazio!", show_alert=True)
+        return
+    
     pedido_id = gerar_pedido_id()
     itens = carrinhos[user_id].copy()
-    total = len(itens) * 25.00
+    total = sum(item['preco'] for item in itens)
     
+    # SALVAR PEDIDO CORRETAMENTE
     pedidos[pedido_id] = {
         'user_id': user_id,
-        'itens': itens,
+        'itens': itens,  # Agora salva a lista completa
         'total': total,
-        'pago': False
+        'pago': False,
+        'data': datetime.now().strftime("%d/%m/%Y %H:%M")
     }
+    
+    print(f"✅ Pedido salvo: {pedido_id}, Itens: {len(itens)}, Total: {total}")
     
     keyboard = [
         [InlineKeyboardButton("💰 GERAR PIX", callback_data=f'pagar_{pedido_id}')],
@@ -236,48 +251,64 @@ async def finalizar_compra(update: Update, context):
 
 async def pagar_pix(update: Update, context):
     query = update.callback_query
+    data = query.data
+    print(f"DEBUG: pagar_pix chamado com data: {data}")
+    
+    if '_' not in data:
+        await query.answer("❌ Erro no pedido!", show_alert=True)
+        return
+    
     pedido_id = query.data.split('_')[1]
+    print(f"DEBUG: Pedido ID extraído: {pedido_id}")
     
     if pedido_id not in pedidos:
+        print(f"DEBUG: Pedido {pedido_id} não encontrado em pedidos")
+        print(f"DEBUG: Pedidos existentes: {list(pedidos.keys())}")
         await query.answer("❌ Pedido não encontrado!", show_alert=True)
         return
     
     pedido = pedidos[pedido_id]
     total = pedido['total']
+    print(f"DEBUG: Pedido encontrado: {pedido_id}, Total: {total}")
     
-    # Gerar QR Code
-    qr_img = gerar_qr_pix(total, pedido_id)
-    codigo_pix = gerar_codigo_pix(total, pedido_id)
-    
-    # Enviar QR Code
-    await query.message.reply_photo(
-        photo=qr_img,
-        caption=f"💰 *PAGAMENTO PIX*\n\n"
-               f"📦 Pedido: #{pedido_id}\n"
-               f"💰 Valor: R$ {total:.2f}\n\n"
-               f"*Como pagar:*\n"
-               f"1. Abra seu app do banco\n"
-               f"2. Escaneie o QR Code\n"
-               f"3. OU use o código abaixo",
-        parse_mode='Markdown'
-    )
-    
-    # Enviar código PIX (pode copiar)
-    await query.message.reply_text(
-        f"📋 *CÓDIGO PIX (Copie e Cole):*\n\n"
-        f"```\n{codigo_pix}\n```\n\n"
-        f"*Após pagar, clique no botão abaixo:*",
-        parse_mode='Markdown',
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ JÁ PAGUEI", callback_data=f'pago_{pedido_id}')]])
-    )
-    
-    await query.edit_message_text(
-        f"✅ *PIX GERADO!*\n\n"
-        f"📦 Pedido: #{pedido_id}\n"
-        f"💰 Valor: R$ {total:.2f}\n\n"
-        f"Verifique suas mensagens para o QR Code.",
-        parse_mode='Markdown'
-    )
+    try:
+        # Gerar QR Code
+        qr_img = gerar_qr_pix(total, pedido_id)
+        codigo_pix = gerar_codigo_pix(total, pedido_id)
+        
+        # Enviar QR Code
+        await query.message.reply_photo(
+            photo=qr_img,
+            caption=f"💰 *PAGAMENTO PIX*\n\n"
+                   f"📦 Pedido: #{pedido_id}\n"
+                   f"💰 Valor: R$ {total:.2f}\n\n"
+                   f"*Como pagar:*\n"
+                   f"1. Abra seu app do banco\n"
+                   f"2. Escaneie o QR Code\n"
+                   f"3. OU use o código abaixo",
+            parse_mode='Markdown'
+        )
+        
+        # Enviar código PIX (pode copiar)
+        await query.message.reply_text(
+            f"📋 *CÓDIGO PIX (Copie e Cole):*\n\n"
+            f"```\n{codigo_pix}\n```\n\n"
+            f"*Após pagar, clique no botão abaixo:*",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ JÁ PAGUEI", callback_data=f'pago_{pedido_id}')]])
+        )
+        
+        await query.edit_message_text(
+            f"✅ *PIX GERADO!*\n\n"
+            f"📦 Pedido: #{pedido_id}\n"
+            f"💰 Valor: R$ {total:.2f}\n\n"
+            f"Verifique suas mensagens para o QR Code.",
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        print(f"ERRO ao gerar PIX: {e}")
+        await query.answer(f"❌ Erro: {str(e)}", show_alert=True)
 
 async def confirmar_pagamento(update: Update, context):
     query = update.callback_query
@@ -289,6 +320,7 @@ async def confirmar_pagamento(update: Update, context):
     
     pedido = pedidos[pedido_id]
     pedido['pago'] = True
+    pedido['data_pagamento'] = datetime.now().strftime("%d/%m/%Y %H:%M")
     
     # Limpar carrinho
     user_id = pedido['user_id']
@@ -297,7 +329,7 @@ async def confirmar_pagamento(update: Update, context):
     
     # Gerar QR Code do eSIM
     qr_esim = qrcode.QRCode()
-    qr_esim.add_data(f"eSIM:VIVO:{pedido_id}:ATIVAR")
+    qr_esim.add_data(f"eSIM:VIVO:{pedido_id}:ATIVAR:{user_id}")
     img_esim = qr_esim.make_image()
     img_bytes = io.BytesIO()
     img_esim.save(img_bytes, format='PNG')
@@ -328,7 +360,48 @@ async def confirmar_pagamento(update: Update, context):
         parse_mode='Markdown'
     )
 
-async def ajuda(update: Update, context):
+async def instrucoes_ativacao(update: Update, context):
+    """INSTRUÇÕES para conectar o chip"""
+    query = update.callback_query
+    
+    keyboard = [
+        [InlineKeyboardButton("🆘 PRECISO DE SUPORTE", callback_data='suporte')],
+        [InlineKeyboardButton("⬅️ VOLTAR", callback_data='menu')]
+    ]
+    
+    await query.edit_message_text(
+        "❓ *COMO ATIVAR SEU E-SIM:*\n\n"
+        
+        "*📱 PARA iPHONE:*\n"
+        "1. Vá em Ajustes > Celular\n"
+        "2. Toque em 'Adicionar Plano Celular'\n"
+        "3. Escaneie o QR Code recebido\n"
+        "4. Toque em 'Continuar'\n"
+        "5. Ative a linha\n\n"
+        
+        "*📱 PARA ANDROID:*\n"
+        "1. Vá em Configurações > Rede e Internet\n"
+        "2. Toque em 'eSIM'\n"
+        "3. Escolha 'Adicionar eSIM'\n"
+        "4. Escaneie o QR Code recebido\n"
+        "5. Ative o plano\n\n"
+        
+        "*⏳ TEMPO DE ATIVAÇÃO:*\n"
+        "• Normal: 2 a 5 minutos\n"
+        "• Máximo: 15 minutos\n\n"
+        
+        "*⚠️ PROBLEMAS COMUNS:*\n"
+        "• QR Code não escaneia: Aumente o brilho\n"
+        "• 'eSIM não suportado': Seu celular não tem eSIM\n"
+        "• Sem sinal: Aguarde 10 minutos\n\n"
+        
+        "_Se ainda tiver problemas, clique em 'Preciso de Suporte'_",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='Markdown'
+    )
+
+async def suporte_tecnico(update: Update, context):
+    """SUPORTE para resolver problemas técnicos"""
     query = update.callback_query
     
     keyboard = [
@@ -339,17 +412,34 @@ async def ajuda(update: Update, context):
     ]
     
     await query.edit_message_text(
-        "❓ *AJUDA E SUPORTE*\n\n"
-        "*CONTATOS OFICIAIS:*\n"
-        "📞 WhatsApp: 33 98451-8052\n"
-        "📱 Telegram: @Drwed33\n"
-        "📧 Email: richdweed@gmail.com\n\n"
-        "*DONA DA LOJA:*\n"
-        "👤 Solineia Guimaraes de Souza\n\n"
-        "*HORÁRIO DE ATENDIMENTO:*\n"
-        "🕐 Segunda a Sexta: 8h às 20h\n"
-        "🕐 Sábado: 9h às 18h\n"
-        "🕐 Domingo: 10h às 16h",
+        "🆘 *SUPORTE TÉCNICO*\n\n"
+        
+        "*📞 CONTATOS OFICIAIS:*\n"
+        "• WhatsApp: 33 98451-8052\n"
+        "• Telegram: @Drwed33\n"
+        "• Email: richdweed@gmail.com\n\n"
+        
+        "*👤 RESPONSÁVEL TÉCNICO:*\n"
+        "• Nome: Weed do nar\n"
+        "• Telegram: @Drwed33\n\n"
+        
+        "*🕐 HORÁRIO DE ATENDIMENTO:*\n"
+        "• Segunda a Sexta: 8h às 20h\n"
+        "• Sábado: 9h às 18h\n"
+        "• Domingo: 10h às 16h\n\n"
+        
+        "*⏱️ TEMPO DE RESPOSTA:*\n"
+        "• WhatsApp/Telegram: 5-10 minutos\n"
+        "• Email: 2-4 horas\n\n"
+        
+        "*🔧 PROBLEMAS QUE RESOLVEMOS:*\n"
+        "• QR Code não funciona\n"
+        "• eSIM não ativa\n"
+        "• Sem conexão de internet\n"
+        "• Dúvidas sobre pagamento\n"
+        "• Problemas técnicos\n\n"
+        
+        "_Entre em contato pelo botão acima_",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
@@ -362,7 +452,8 @@ async def menu(update: Update, context):
     keyboard = [
         [InlineKeyboardButton("📱 VER PLANOS", callback_data='planos')],
         [InlineKeyboardButton(f"🛒 CARRINHO ({qtd})", callback_data='carrinho')],
-        [InlineKeyboardButton("❓ AJUDA", callback_data='ajuda')]
+        [InlineKeyboardButton("❓ COMO FUNCIONA", callback_data='instrucoes')],
+        [InlineKeyboardButton("🆘 SUPORTE TÉCNICO", callback_data='suporte')]
     ]
     
     await query.edit_message_text(
@@ -409,7 +500,8 @@ def main():
     app.add_handler(CallbackQueryHandler(finalizar_compra, pattern='^finalizar$'))
     app.add_handler(CallbackQueryHandler(pagar_pix, pattern='^pagar_'))
     app.add_handler(CallbackQueryHandler(confirmar_pagamento, pattern='^pago_'))
-    app.add_handler(CallbackQueryHandler(ajuda, pattern='^ajuda$'))
+    app.add_handler(CallbackQueryHandler(instrucoes_ativacao, pattern='^instrucoes$'))
+    app.add_handler(CallbackQueryHandler(suporte_tecnico, pattern='^suporte$'))
     app.add_handler(CallbackQueryHandler(menu, pattern='^menu$'))
     app.add_handler(CallbackQueryHandler(limpar_carrinho, pattern='^limpar$'))
     
