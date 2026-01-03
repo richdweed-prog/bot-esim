@@ -17,7 +17,7 @@ if not TOKEN:
 
 # Configuração PIX
 PIX_CHAVE = "gaila191h@gmail.com"
-PIX_NOME = "Solineia Guimaraes de Souza"
+PIX_NOME = "Solineia G de Souza"
 PIX_CIDADE = "Belo Horizonte"
 
 # ========== FLASK APP ==========
@@ -357,7 +357,7 @@ async def suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = "🆘 *SUPORTE TÉCNICO:*\n\n"
     texto += "*WhatsApp:* 33 98451-8052\n"
     texto += "*Telegram:* @Drwed33\n"
-    texto += "*Email:* richdweed@gmail.com\n\n"
+    texto += "*Email:* gaila191h@gmail.com\n\n"
     texto += "*Responsável:* Solineia Guimaraes\n"
     texto += "*Horário:* 8h às 20h\n\n"
     texto += "_Clique nos botões abaixo para contato direto_"
@@ -365,7 +365,7 @@ async def suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📞 WHATSAPP", url='https://wa.me/5533984518052')],
         [InlineKeyboardButton("📱 TELEGRAM", url='https://t.me/Drwed33')],
-        [InlineKeyboardButton("📧 EMAIL", url='mailto:richdweed@gmail.com')],
+        [InlineKeyboardButton("📧 EMAIL", url='mailto:gaila191h@gmail.com')],
         [InlineKeyboardButton("⬅️ VOLTAR", callback_data='menu')]
     ]
     
@@ -560,3 +560,4 @@ if __name__ == '__main__':
     
     print("🚀 Iniciando bot...")
     run_bot()
+
