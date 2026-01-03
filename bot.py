@@ -1,278 +1,174 @@
 import os
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-# ========== CONFIGURAÇÃO ==========
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# ========== DADOS DOS PLANOS ==========
 PLANOS = {
-    '11': {'operadora': 'VIVO', 'ddd': '11', 'dados': '66GB', 'valor': 25.00},
-    '12': {'operadora': 'VIVO', 'ddd': '12', 'dados': '66GB', 'valor': 25.00},
-    '31': {'operadora': 'VIVO', 'ddd': '31', 'dados': '66GB', 'valor': 25.00},
-    '61': {'operadora': 'VIVO', 'ddd': '61', 'dados': '66GB', 'valor': 25.00},
-    '75': {'operadora': 'VIVO', 'ddd': '75', 'dados': '66GB', 'valor': 25.00},
-    '88': {'operadora': 'VIVO', 'ddd': '88', 'dados': '66GB', 'valor': 25.00},
+    '11': {'dados': '66GB', 'valor': 25.00},
+    '12': {'dados': '66GB', 'valor': 25.00},
+    '31': {'dados': '66GB', 'valor': 25.00},
+    '61': {'dados': '66GB', 'valor': 25.00},
+    '75': {'dados': '66GB', 'valor': 25.00},
+    '88': {'dados': '66GB', 'valor': 25.00},
 }
 
 carrinhos = {}
 
-# ========== FUNÇÕES DO BOT ==========
 def start(bot, update):
-    user_id = str(update.effective_user.id)
-    
+    user_id = update.effective_user.id
     if user_id not in carrinhos:
         carrinhos[user_id] = []
     
     keyboard = [
-        [InlineKeyboardButton("📱 Ver Planos", callback_data='ver_planos')],
-        [InlineKeyboardButton(f"🛒 Carrinho ({len(carrinhos[user_id])})", callback_data='ver_carrinho')],
+        [InlineKeyboardButton("📱 Ver Planos", callback_data='planos')],
+        [InlineKeyboardButton(f"🛒 Carrinho ({len(carrinhos[user_id])})", callback_data='carrinho')],
         [InlineKeyboardButton("❓ Ajuda", callback_data='ajuda')],
         [InlineKeyboardButton("📞 Suporte", callback_data='suporte')]
     ]
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
     update.message.reply_text(
-        "🛍️ *Bem-vindo à Loja de eSIM!*\n\n"
-        "Compre seu chip digital com 66GB de internet.\n"
-        "Ativação imediata!",
-        reply_markup=reply_markup,
+        "🛍️ *Bem-vindo à Loja de eSIM!*\n66GB por R$25\nAtivação imediata!",
+        reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
 
-def ver_planos(bot, update):
+def planos(bot, update):
     query = update.callback_query
     query.answer()
     
     keyboard = []
-    for ddd, plano in PLANOS.items():
-        keyboard.append([
-            InlineKeyboardButton(
-                f"📱 VIVO DDD {ddd} - {plano['dados']} - R${plano['valor']}",
-                callback_data=f'plano_{ddd}'
-            )
-        ])
+    for ddd in PLANOS:
+        keyboard.append([InlineKeyboardButton(f"VIVO DDD {ddd} - 66GB - R$25", callback_data=f'plano_{ddd}')])
     
-    keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data='voltar_inicio')])
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data='menu')])
     
     query.edit_message_text(
-        "📋 *Planos Disponíveis:*\n\n"
-        "Escolha o DDD:",
-        reply_markup=reply_markup,
+        "📋 *Planos Disponíveis:*\nEscolha o DDD:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
 
-def detalhes_plano(bot, update):
+def plano_detail(bot, update):
     query = update.callback_query
     ddd = query.data.split('_')[1]
-    plano = PLANOS[ddd]
     
     keyboard = [
         [InlineKeyboardButton("✅ Adicionar ao Carrinho", callback_data=f'add_{ddd}')],
-        [InlineKeyboardButton("📋 Ver Planos", callback_data='ver_planos')],
-        [InlineKeyboardButton("🛒 Carrinho", callback_data='ver_carrinho')],
+        [InlineKeyboardButton("📋 Ver Planos", callback_data='planos')],
+        [InlineKeyboardButton("🛒 Carrinho", callback_data='carrinho')],
     ]
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
     query.edit_message_text(
-        f"📱 *PLANO VIVO DDD {ddd}*\n\n"
-        f"• Dados: {plano['dados']}\n"
-        f"• Chamadas: Ilimitadas\n"
-        f"• WhatsApp: Ilimitado\n"
-        f"• Valor: R$ {plano['valor']:.2f}\n\n"
-        f"_Ativação em 2 minutos após pagamento._",
-        reply_markup=reply_markup,
+        f"📱 *VIVO DDD {ddd}*\n66GB - R$25,00\nChamadas ilimitadas\nWhatsApp ilimitado",
+        reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
 
-def adicionar_carrinho(bot, update):
+def add_carrinho(bot, update):
     query = update.callback_query
     ddd = query.data.split('_')[1]
-    plano = PLANOS[ddd].copy()
-    user_id = str(query.from_user.id)
+    user_id = query.from_user.id
     
     if user_id not in carrinhos:
         carrinhos[user_id] = []
     
-    carrinhos[user_id].append(plano)
-    total = sum(item['valor'] for item in carrinhos[user_id])
+    carrinhos[user_id].append(ddd)
     
     keyboard = [
-        [InlineKeyboardButton(f"🛒 Carrinho ({len(carrinhos[user_id])})", callback_data='ver_carrinho')],
-        [InlineKeyboardButton("📋 Mais Planos", callback_data='ver_planos')],
-        [InlineKeyboardButton("💳 Pagar", callback_data='finalizar')]
+        [InlineKeyboardButton(f"🛒 Carrinho ({len(carrinhos[user_id])})", callback_data='carrinho')],
+        [InlineKeyboardButton("📋 Mais Planos", callback_data='planos')],
+        [InlineKeyboardButton("💳 Pagar", callback_data='pagar')]
     ]
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
     query.edit_message_text(
-        f"✅ *Adicionado!*\n\n"
-        f"VIVO DDD {ddd}\n"
-        f"66GB - R$ {plano['valor']:.2f}\n\n"
-        f"Total: R$ {total:.2f}",
-        reply_markup=reply_markup,
+        f"✅ *Adicionado!*\nVIVO DDD {ddd}\n66GB - R$25,00",
+        reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
 
 def ver_carrinho(bot, update):
     query = update.callback_query
-    user_id = str(query.from_user.id)
+    user_id = query.from_user.id
     
     if user_id not in carrinhos or not carrinhos[user_id]:
-        keyboard = [[InlineKeyboardButton("📋 Ver Planos", callback_data='ver_planos')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
         query.edit_message_text(
             "🛒 *Carrinho vazio*",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📋 Ver Planos", callback_data='planos')]])
         )
         return
     
     itens = carrinhos[user_id]
-    total = sum(item['valor'] for item in itens)
-    itens_text = "\n".join([f"• VIVO DDD {item['ddd']} - R$ {item['valor']:.2f}" for item in itens])
+    total = len(itens) * 25.00
+    itens_text = "\n".join([f"• VIVO DDD {ddd} - R$25,00" for ddd in itens])
     
     keyboard = [
-        [InlineKeyboardButton("💳 Pagar", callback_data='finalizar')],
-        [InlineKeyboardButton("🗑️ Limpar", callback_data='limpar_carrinho')],
-        [InlineKeyboardButton("📋 Planos", callback_data='ver_planos')]
+        [InlineKeyboardButton("💳 Pagar", callback_data='pagar')],
+        [InlineKeyboardButton("🗑️ Limpar", callback_data='limpar')],
+        [InlineKeyboardButton("📋 Planos", callback_data='planos')]
     ]
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
     query.edit_message_text(
-        f"🛒 *Seu Carrinho*\n\n{itens_text}\n\n"
-        f"*Total: R$ {total:.2f}*",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
-    )
-
-def finalizar_compra(bot, update):
-    query = update.callback_query
-    user_id = str(query.from_user.id)
-    
-    if user_id not in carrinhos or not carrinhos[user_id]:
-        query.answer("Carrinho vazio!", show_alert=True)
-        return
-    
-    total = sum(item['valor'] for item in carrinhos[user_id])
-    
-    keyboard = [
-        [InlineKeyboardButton("💰 PIX", callback_data='pagar_pix')],
-        [InlineKeyboardButton("💳 Cartão", callback_data='pagar_cartao')],
-        [InlineKeyboardButton("⬅️ Voltar", callback_data='ver_carrinho')]
-    ]
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    query.edit_message_text(
-        f"💰 *Pagamento*\n\n"
-        f"Total: R$ {total:.2f}\n\n"
-        f"Escolha a forma de pagamento:",
-        reply_markup=reply_markup,
+        f"🛒 *Seu Carrinho*\n\n{itens_text}\n\n*Total: R$ {total:.2f}*",
+        reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
 
 def ajuda(bot, update):
     query = update.callback_query
-    
-    keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data='voltar_inicio')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
     query.edit_message_text(
-        "❓ *Ajuda*\n\n"
-        "1. Escolha o DDD\n"
-        "2. Adicione ao carrinho\n"
-        "3. Faça o pagamento\n"
-        "4. Receba o QR Code\n"
-        "5. Ative no celular",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
+        "❓ *Ajuda*\n1. Escolha o DDD\n2. Adicione ao carrinho\n3. Pague\n4. Receba QR Code\n5. Ative no celular",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Voltar", callback_data='menu')]])
     )
 
 def suporte(bot, update):
     query = update.callback_query
-    
-    keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data='voltar_inicio')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
     query.edit_message_text(
-        "📞 *Suporte*\n\n"
-        "WhatsApp: (33) 984518052\n"
-        "Email: richdweed@gmail.com",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
+        "📞 *Suporte*\nWhatsApp: (33) 984518052\nEmail: richdweed@gmail.com",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Voltar", callback_data='menu')]])
     )
 
-def voltar_inicio(bot, update):
+def menu(bot, update):
     query = update.callback_query
-    user_id = str(query.from_user.id)
-    
+    user_id = query.from_user.id
     items_count = len(carrinhos.get(user_id, []))
     
     keyboard = [
-        [InlineKeyboardButton("📱 Ver Planos", callback_data='ver_planos')],
-        [InlineKeyboardButton(f"🛒 Carrinho ({items_count})", callback_data='ver_carrinho')],
+        [InlineKeyboardButton("📱 Ver Planos", callback_data='planos')],
+        [InlineKeyboardButton(f"🛒 Carrinho ({items_count})", callback_data='carrinho')],
         [InlineKeyboardButton("❓ Ajuda", callback_data='ajuda')],
         [InlineKeyboardButton("📞 Suporte", callback_data='suporte')]
     ]
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
     query.edit_message_text(
         "🛍️ *Menu Principal*",
-        reply_markup=reply_markup,
+        reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
 
-def limpar_carrinho(bot, update):
-    query = update.callback_query
-    user_id = str(query.from_user.id)
-    
-    if user_id in carrinhos:
-        carrinhos[user_id] = []
-    
-    query.answer("Carrinho limpo!", show_alert=True)
-    voltar_inicio(bot, update)
-
-# ========== FUNÇÃO PRINCIPAL ==========
 def main():
     TOKEN = os.getenv('TELEGRAM_TOKEN')
     
     if not TOKEN:
-        print("❌ ERRO: Token não encontrado nas variáveis de ambiente!")
-        print("Configure TELEGRAM_TOKEN no Render")
+        print("❌ ERRO: Token não encontrado!")
         return
     
     print("🤖 Iniciando Bot de eSIM...")
     
-    # Criar updater (versão 13.7)
     updater = Updater(TOKEN)
     dp = updater.dispatcher
     
-    # Registrar handlers (versão antiga)
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CallbackQueryHandler(ver_planos, pattern='ver_planos'))
-    dp.add_handler(CallbackQueryHandler(detalhes_plano, pattern='^plano_'))
-    dp.add_handler(CallbackQueryHandler(adicionar_carrinho, pattern='^add_'))
-    dp.add_handler(CallbackQueryHandler(ver_carrinho, pattern='ver_carrinho'))
-    dp.add_handler(CallbackQueryHandler(finalizar_compra, pattern='finalizar'))
+    dp.add_handler(CallbackQueryHandler(planos, pattern='planos'))
+    dp.add_handler(CallbackQueryHandler(plano_detail, pattern='^plano_'))
+    dp.add_handler(CallbackQueryHandler(add_carrinho, pattern='^add_'))
+    dp.add_handler(CallbackQueryHandler(ver_carrinho, pattern='carrinho'))
     dp.add_handler(CallbackQueryHandler(ajuda, pattern='ajuda'))
     dp.add_handler(CallbackQueryHandler(suporte, pattern='suporte'))
-    dp.add_handler(CallbackQueryHandler(voltar_inicio, pattern='voltar_inicio'))
-    dp.add_handler(CallbackQueryHandler(limpar_carrinho, pattern='limpar_carrinho'))
+    dp.add_handler(CallbackQueryHandler(menu, pattern='menu'))
     
-    # Iniciar bot
-    print("✅ Bot pronto e online!")
+    print("✅ Bot pronto!")
     updater.start_polling()
     updater.idle()
 
