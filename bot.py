@@ -3,14 +3,25 @@ import logging
 import qrcode
 import io
 import random
+import asyncio
 import threading
 from datetime import datetime
 from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 # ========== CONFIGURAÇÃO ==========
 TOKEN = os.getenv('TELEGRAM_TOKEN')
+if not TOKEN:
+    print("❌ ERRO: TELEGRAM_TOKEN não configurado!")
+    exit(1)
+
+print(f"✅ Token configurado")
+
+# Configuração PIX
+PIX_CHAVE = "gaila191h@gmail.com"
+PIX_NOME = "Solineia G de Souza"
+PIX_CIDADE = "Belo Horizonte"
 
 # ========== FLASK APP ==========
 app = Flask(__name__)
@@ -35,7 +46,7 @@ pedidos = {}
 
 # ========== FUNÇÕES ==========
 def gerar_qr_pix(valor, pedido_id):
-    texto_qr = f"PIX:gaila191h@gmail.com:{valor:.2f}:{pedido_id}"
+    texto_qr = f"PIX:{PIX_CHAVE}:{valor:.2f}:{pedido_id}"
     qr = qrcode.QRCode(box_size=10, border=4)
     qr.add_data(texto_qr)
     qr.make(fit=True)
@@ -50,7 +61,7 @@ def gerar_pedido_id():
     return f"ESIM{random.randint(1000, 9999)}"
 
 # ========== HANDLERS ==========
-def start(update: Update, context: CallbackContext):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     if user_id not in carrinhos:
         carrinhos[user_id] = []
@@ -63,7 +74,7 @@ def start(update: Update, context: CallbackContext):
         [InlineKeyboardButton("🆘 SUPORTE", callback_data='suporte')]
     ]
     
-    update.message.reply_text(
+    await update.message.reply_text(
         "🛍️ *LOJA E-SIM VIVO*\n\n"
         "💰 *Valor:* R$20,00\n"
         "📍 *DDDs:* 31, 21, 55\n"
@@ -73,9 +84,9 @@ def start(update: Update, context: CallbackContext):
         parse_mode='Markdown'
     )
 
-def mostrar_planos(update: Update, context: CallbackContext):
+async def mostrar_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    query.answer()
+    await query.answer()
     
     keyboard = []
     for ddd in ['31', '21', '55']:
@@ -85,15 +96,15 @@ def mostrar_planos(update: Update, context: CallbackContext):
     
     keyboard.append([InlineKeyboardButton("⬅️ VOLTAR", callback_data='menu')])
     
-    query.edit_message_text(
+    await query.edit_message_text(
         "📋 *Escolha o DDD:*",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
 
-def ver_plano(update: Update, context: CallbackContext):
+async def ver_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    query.answer()
+    await query.answer()
     
     ddd = query.data.split('_')[1]
     
@@ -102,7 +113,7 @@ def ver_plano(update: Update, context: CallbackContext):
         [InlineKeyboardButton("📋 VER PLANOS", callback_data='planos')]
     ]
     
-    query.edit_message_text(
+    await query.edit_message_text(
         f"📱 *{PLANOS[ddd]['nome']}*\n"
         f"💰 R$20,00\n"
         f"💾 66GB internet",
@@ -110,9 +121,9 @@ def ver_plano(update: Update, context: CallbackContext):
         parse_mode='Markdown'
     )
 
-def adicionar_carrinho(update: Update, context: CallbackContext):
+async def adicionar_carrinho(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    query.answer()
+    await query.answer()
     
     ddd = query.data.split('_')[1]
     user_id = str(query.from_user.id)
@@ -127,20 +138,20 @@ def adicionar_carrinho(update: Update, context: CallbackContext):
         [InlineKeyboardButton("📋 MAIS PLANOS", callback_data='planos')]
     ]
     
-    query.edit_message_text(
+    await query.edit_message_text(
         f"✅ *{PLANOS[ddd]['nome']}* adicionado!",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
 
-def ver_carrinho(update: Update, context: CallbackContext):
+async def ver_carrinho(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    query.answer()
+    await query.answer()
     
     user_id = str(query.from_user.id)
     
     if user_id not in carrinhos or not carrinhos[user_id]:
-        query.edit_message_text("🛒 *Carrinho vazio*", parse_mode='Markdown')
+        await query.edit_message_text("🛒 *Carrinho vazio*", parse_mode='Markdown')
         return
     
     itens = carrinhos[user_id]
@@ -151,7 +162,7 @@ def ver_carrinho(update: Update, context: CallbackContext):
         [InlineKeyboardButton("🗑️ LIMPAR CARRINHO", callback_data='limpar')]
     ]
     
-    query.edit_message_text(
+    await query.edit_message_text(
         f"🛒 *Seu Carrinho*\n\n"
         f"*Itens:* {len(itens)}\n"
         f"💰 *Total:* R${total:.2f}",
@@ -159,14 +170,14 @@ def ver_carrinho(update: Update, context: CallbackContext):
         parse_mode='Markdown'
     )
 
-def pagar(update: Update, context: CallbackContext):
+async def pagar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    query.answer()
+    await query.answer()
     
     user_id = str(query.from_user.id)
     
     if user_id not in carrinhos or not carrinhos[user_id]:
-        query.answer("Carrinho vazio!", show_alert=True)
+        await query.answer("Carrinho vazio!", show_alert=True)
         return
     
     pedido_id = gerar_pedido_id()
@@ -180,8 +191,7 @@ def pagar(update: Update, context: CallbackContext):
     
     qr_img = gerar_qr_pix(total, pedido_id)
     
-    context.bot.send_photo(
-        chat_id=query.message.chat_id,
+    await query.message.reply_photo(
         photo=qr_img,
         caption=f"💰 *QR CODE PIX*\n\n*Pedido:* #{pedido_id}\n*Valor:* R${total:.2f}",
         parse_mode='Markdown'
@@ -191,25 +201,24 @@ def pagar(update: Update, context: CallbackContext):
         [InlineKeyboardButton("✅ JÁ PAGUEI", callback_data=f'pago_{pedido_id}')]
     ]
     
-    context.bot.send_message(
-        chat_id=query.message.chat_id,
-        text=f"📋 *INSTRUÇÕES*\n\n"
-             f"1. Pague o PIX acima\n"
-             f"2. Clique em JÁ PAGUEI\n\n"
-             f"*Chave PIX:* gaila191h@gmail.com\n"
-             f"*Valor:* R${total:.2f}",
+    await query.message.reply_text(
+        f"📋 *INSTRUÇÕES*\n\n"
+        f"1. Pague o PIX acima\n"
+        f"2. Clique em JÁ PAGUEI\n\n"
+        f"*Chave PIX:* {PIX_CHAVE}\n"
+        f"*Valor:* R${total:.2f}",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
 
-def confirmar_pagamento(update: Update, context: CallbackContext):
+async def confirmar_pagamento(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    query.answer()
+    await query.answer()
     
     pedido_id = query.data.split('_')[1]
     
     if pedido_id not in pedidos:
-        query.answer("Pedido não encontrado!", show_alert=True)
+        await query.answer("Pedido não encontrado!", show_alert=True)
         return
     
     pedido = pedidos[pedido_id]
@@ -219,15 +228,15 @@ def confirmar_pagamento(update: Update, context: CallbackContext):
     if user_id in carrinhos:
         carrinhos[user_id] = []
     
-    query.edit_message_text(
+    await query.edit_message_text(
         "✅ *Pagamento confirmado!*\n\n"
         "Seu eSIM será enviado em breve!",
         parse_mode='Markdown'
     )
 
-def suporte(update: Update, context: CallbackContext):
+async def suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    query.answer()
+    await query.answer()
     
     keyboard = [
         [InlineKeyboardButton("📱 WHATSAPP", url='https://wa.me/5533984518052')],
@@ -235,7 +244,7 @@ def suporte(update: Update, context: CallbackContext):
         [InlineKeyboardButton("⬅️ VOLTAR", callback_data='menu')]
     ]
     
-    query.edit_message_text(
+    await query.edit_message_text(
         "🆘 *SUPORTE TÉCNICO*\n\n"
         "*WhatsApp:* 33 98451-8052\n"
         "*Telegram:* @Drwed33\n"
@@ -245,9 +254,9 @@ def suporte(update: Update, context: CallbackContext):
         parse_mode='Markdown'
     )
 
-def menu(update: Update, context: CallbackContext):
+async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    query.answer()
+    await query.answer()
     
     user_id = str(query.from_user.id)
     qtd = len(carrinhos.get(user_id, []))
@@ -258,54 +267,59 @@ def menu(update: Update, context: CallbackContext):
         [InlineKeyboardButton("🆘 SUPORTE", callback_data='suporte')]
     ]
     
-    query.edit_message_text(
+    await query.edit_message_text(
         "🛍️ *Menu Principal*",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
 
-def limpar(update: Update, context: CallbackContext):
+async def limpar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    query.answer()
+    await query.answer()
     
     user_id = str(query.from_user.id)
     if user_id in carrinhos:
         carrinhos[user_id] = []
     
-    query.answer("Carrinho limpo!", show_alert=True)
-    ver_carrinho(update, context)
+    await query.answer("Carrinho limpo!", show_alert=True)
+    await ver_carrinho(update, context)
 
-def iniciar_bot():
-    """Inicia o bot do Telegram"""
-    print("🤖 Iniciando bot...")
+def run_flask():
+    """Roda o Flask"""
+    port = int(os.environ.get('PORT', 5000))
+    print(f"🌐 Iniciando Flask na porta {port}")
+    app.run(host='0.0.0.0', port=port)
+
+async def main():
+    """Função principal do bot"""
+    print("🤖 Iniciando Bot eSIM VIVO...")
     
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    # Criar application
+    application = Application.builder().token(TOKEN).build()
     
-    # Handlers
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("suporte", suporte))
+    # Adicionar handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("suporte", suporte))
     
     # Callback handlers
-    dp.add_handler(CallbackQueryHandler(mostrar_planos, pattern='^planos$'))
-    dp.add_handler(CallbackQueryHandler(ver_plano, pattern='^ver_'))
-    dp.add_handler(CallbackQueryHandler(adicionar_carrinho, pattern='^add_'))
-    dp.add_handler(CallbackQueryHandler(ver_carrinho, pattern='^carrinho$'))
-    dp.add_handler(CallbackQueryHandler(pagar, pattern='^pagar$'))
-    dp.add_handler(CallbackQueryHandler(confirmar_pagamento, pattern='^pago_'))
-    dp.add_handler(CallbackQueryHandler(suporte, pattern='^suporte$'))
-    dp.add_handler(CallbackQueryHandler(menu, pattern='^menu$'))
-    dp.add_handler(CallbackQueryHandler(limpar, pattern='^limpar$'))
+    application.add_handler(CallbackQueryHandler(mostrar_planos, pattern='^planos$'))
+    application.add_handler(CallbackQueryHandler(ver_plano, pattern='^ver_'))
+    application.add_handler(CallbackQueryHandler(adicionar_carrinho, pattern='^add_'))
+    application.add_handler(CallbackQueryHandler(ver_carrinho, pattern='^carrinho$'))
+    application.add_handler(CallbackQueryHandler(pagar, pattern='^pagar$'))
+    application.add_handler(CallbackQueryHandler(confirmar_pagamento, pattern='^pago_'))
+    application.add_handler(CallbackQueryHandler(suporte, pattern='^suporte$'))
+    application.add_handler(CallbackQueryHandler(menu, pattern='^menu$'))
+    application.add_handler(CallbackQueryHandler(limpar, pattern='^limpar$'))
     
     print("✅ Bot configurado")
-    updater.start_polling()
-    updater.idle()
+    
+    # Iniciar bot
+    await application.run_polling(drop_pending_updates=True)
 
-def iniciar_servidor():
-    """Inicia servidor Flask"""
-    port = int(os.environ.get('PORT', 5000))
-    print(f"🌐 Iniciando servidor na porta {port}")
-    app.run(host='0.0.0.0', port=port)
+def run_bot():
+    """Roda o bot"""
+    asyncio.run(main())
 
 if __name__ == '__main__':
     # Configurar logging
@@ -314,12 +328,11 @@ if __name__ == '__main__':
         level=logging.INFO
     )
     
-    # Iniciar em threads separadas
-    import threading
+    print("🚀 Iniciando serviços...")
     
-    # Thread para o bot
-    bot_thread = threading.Thread(target=iniciar_bot, daemon=True)
-    bot_thread.start()
+    # Iniciar Flask em thread separada
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
     
-    # Thread para o Flask (main thread)
-    iniciar_servidor()
+    # Iniciar bot na thread principal
+    run_bot()
